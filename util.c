@@ -64,6 +64,18 @@ char *uriencode_p(const char *src, char *dst, const size_t srclen) {
 /* Avoid warnings on solaris, where isspace() is an index into an array, and gcc uses signed chars */
 #define xisspace(c) isspace((unsigned char)c)
 
+/* Return true if the parsed input had a leading '-' sign. strtoul/strtoull
+ * silently accept negative inputs and wrap them, so callers parsing unsigned
+ * values must reject them explicitly. We can't rely on testing whether the
+ * result casts to a negative signed value: inputs in the range
+ * (LLONG_MIN-1, ULLONG_MAX] wrap back into a positive signed value. */
+static bool _has_neg_sign(const char *str) {
+    while (xisspace(*str)) {
+        str++;
+    }
+    return *str == '-';
+}
+
 bool safe_strtoull(const char *str, uint64_t *out) {
     assert(out != NULL);
     errno = 0;
@@ -75,13 +87,8 @@ bool safe_strtoull(const char *str, uint64_t *out) {
     }
 
     if (xisspace(*endptr) || (*endptr == '\0' && endptr != str)) {
-        if ((long long) ull < 0) {
-            /* only check for negative signs in the uncommon case when
-             * the unsigned number is so big that it's negative as a
-             * signed number. */
-            if (memchr(str, '-', endptr - str) != NULL) {
-                return false;
-            }
+        if (_has_neg_sign(str)) {
+            return false;
         }
         *out = ull;
         return true;
@@ -105,13 +112,8 @@ bool safe_strtoull_hex(const char *str, uint64_t *out) {
     }
 
     if (xisspace(*endptr) || (*endptr == '\0' && endptr != str)) {
-        if ((long long) ull < 0) {
-            /* only check for negative signs in the uncommon case when
-             * the unsigned number is so big that it's negative as a
-             * signed number. */
-            if (memchr(str, '-', endptr - str) != NULL) {
-                return false;
-            }
+        if (_has_neg_sign(str)) {
+            return false;
         }
         *out = ull;
         return true;
@@ -150,13 +152,8 @@ bool safe_strtoul(const char *str, uint32_t *out) {
     }
 
     if (xisspace(*endptr) || (*endptr == '\0' && endptr != str)) {
-        if ((long) l < 0) {
-            /* only check for negative signs in the uncommon case when
-             * the unsigned number is so big that it's negative as a
-             * signed number. */
-            if (memchr(str, '-', endptr - str) != NULL) {
-                return false;
-            }
+        if (_has_neg_sign(str)) {
+            return false;
         }
         *out = l;
         return true;

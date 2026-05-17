@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 
 use strict;
-use Test::More tests => 23;
+use Test::More tests => 30;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -69,3 +69,39 @@ print $sock "incr text 1\r\n";
 is(scalar <$sock>,
    "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
    "hi - 1 = 0");
+
+# Regression: safe_strtoull must reject negative deltas and negative stored
+# values, including ones whose two's-complement bit pattern happens to wrap
+# back into a positive (long long) value.
+print $sock "set negdelta 0 0 1\r\n5\r\n";
+is(scalar <$sock>, "STORED\r\n", "stored negdelta");
+
+# Plain negative delta.
+print $sock "incr negdelta -1\r\n";
+is(scalar <$sock>,
+   "CLIENT_ERROR invalid numeric delta argument\r\n",
+   "incr rejects -1 delta");
+
+# Negative delta whose magnitude exceeds LLONG_MAX so the unsigned value
+# wraps back into a positive signed value (the original bug in #1105).
+print $sock "incr negdelta -9912337881327533328\r\n";
+is(scalar <$sock>,
+   "CLIENT_ERROR invalid numeric delta argument\r\n",
+   "incr rejects large negative delta that wraps");
+
+print $sock "decr negdelta -1\r\n";
+is(scalar <$sock>,
+   "CLIENT_ERROR invalid numeric delta argument\r\n",
+   "decr rejects -1 delta");
+
+# Stored value with a leading '-' must not be treated as numeric, even when
+# its strtoull result wraps back into a positive signed value.
+print $sock "set negval 0 0 20\r\n-9912337881327533328\r\n";
+is(scalar <$sock>, "STORED\r\n", "stored negval");
+print $sock "incr negval 10\r\n";
+is(scalar <$sock>,
+   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
+   "incr rejects stored negative value");
+
+# Sanity: confirm value is unchanged after the failed incr.
+mem_get_is($sock, "negval", "-9912337881327533328");
